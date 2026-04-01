@@ -4,8 +4,19 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const basicAuth = require('express-basic-auth');
 
+
+const serverPort = process.env.SERVER_PORT ?? 3000;
+const httpUser = process.env.USER ?? 'user';
+const httpUserPassword = process.env.USER_PASSWORD ?? 'secret';
+const dbUser = process.env.DB_USER ?? 'postgres';
+const dbPassword = process.env.DB_PASSWORD ?? 'postgres';
+const dbHost = process.env.DB_HOST ?? 'localhost';
+const dbDatabase = process.env.DB_DATABASE ?? 'postgres';
+const dbPort = process.env.DB_PORT ?? 5432;
+
 const users = {};
-users[process.env.USER] = process.env.USER_PASSWORD;
+users[httpUser] = httpUserPassword;
+
 const app = express();
 app.use('/api/user/', basicAuth({
     users: users,
@@ -15,11 +26,11 @@ app.use(cors()); // Allows Leaflet frontend to talk to this API
 app.use(bodyParser.json());
 
 const pool = new Pool({
-	user: process.env.DB_USER,
-	host: process.env.DB_HOST,
-	database: process.env.DB_DATABASE,
-	password: process.env.DB_PASSWORD,
-	port: 5432,
+	user: dbUser,
+	password: dbPassword,
+	host: dbHost,
+	database: dbDatabase,
+	port: dbPort,
 });
 
 pool.on('error', (err, client) => {
@@ -66,9 +77,9 @@ app.get('/api/locations', async (req, res) => {
 	}
 });
 
-app.listen(process.env.SERVER_PORT, () => console.log('Backend running on port ' + process.env.SERVER_PORT)).on('error', (err) => {
+app.listen(serverPort, () => console.log('Backend running on port ' + serverPort)).on('error', (err) => {
 	if (err.code === 'EADDRINUSE') {
-		console.error('Port ' + process.env.SERVER_PORT + ' is busy. Try a different port!');
+		console.error('Port ' + serverPort + ' is busy. Try a different port!');
 	} else {
 		console.error('Server error:', err);
 	}
