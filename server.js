@@ -50,7 +50,7 @@ app.post('/api/user/log', async (req, res) => {
     `;
 
 	try {
-		await pool.query(query, [user, lon, lat, time]);
+		await pool.query(query, [httpUser, lon, lat, time]);
 		console.log(`Updated location for ${user}`);
 		res.status(200).send("OK");
 	} catch (err) {
