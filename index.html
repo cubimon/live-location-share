@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title>Live GPS Tracker</title>
+	<link rel="stylesheet" href="/leaflet/leaflet.css" />
+	<style>
+		#map {
+			height: 100vh;
+			width: 100%;
+		}
+
+		body {
+			margin: 0;
+			padding: 0;
+		}
+
+		.stats-box {
+			position: absolute;
+			top: 10px;
+			right: 10px;
+			z-index: 1000;
+			background: white;
+			padding: 10px;
+			border-radius: 5px;
+			font-family: sans-serif;
+			box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+		}
+	</style>
+</head>
+
+<body>
+	<div class="stats-box">
+		<b>Status:</b> <span id="status">Connecting...</span><br>
+		<b>Speed:</b> <span id="speed">0</span> km/h<br>
+		<b>Battery:</b> <span id="batt">0</span>%
+	</div>
+	<div id="map"></div>
+
+	<script src="/leaflet/leaflet.js"></script>
+	<script>
+		// 1. Setup Map
+		const map = L.map('map').setView([0, 0], 2);
+		L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+			attribution: '© OpenStreetMap contributors'
+		}).addTo(map);
+
+		const markers = {};
+		const routes = {};
+
+		// 2. Connect to your Node.js WebSocket
+		// Change 'localhost' to your laptop IP or DynDNS when testing
+		const socket = new WebSocket('ws://' + window.location.hostname + ':' + window.location.port + '/ws');
+
+		socket.onopen = () => {
+			document.getElementById('status').innerText = "Live";
+			document.getElementById('status').style.color = "green";
+		};
+
+		socket.onmessage = (event) => {
+			const data = JSON.parse(event.data);
+			for (const row of data) {
+				const { user, latitude, longitude, speed, battery } = row;
+
+				// Update Stats UI
+				document.getElementById('speed').innerText = Math.round(speed || 0);
+				document.getElementById('batt').innerText = battery || 0;
+
+				const pos = [latitude, longitude];
+
+				// 3. Update or Create Marker
+				if (!markers[user]) {
+					markers[user] = L.marker(pos).addTo(map).bindPopup(`User: ${user}`);
+					routes[user] = L.polyline([pos], { color: 'red' }).addTo(map);
+					map.setView(pos, 15); // Zoom to first point
+				} else {
+					markers[user].setLatLng(pos);
+					routes[user].addLatLng(pos);
+				}
+			}
+		};
+
+		socket.onclose = () => {
+			document.getElementById('status').innerText = "Disconnected";
+			document.getElementById('status').style.color = "red";
+		};
+	</script>
+</body>
+
+</html>
