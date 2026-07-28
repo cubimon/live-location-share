@@ -7,6 +7,7 @@ const basicAuth = require('express-basic-auth');
 const { WebSocketServer } = require('ws');
 const path = require('path');
 
+process.loadEnvFile('.env');
 
 const serverPort = process.env.SERVER_PORT ?? 3000;
 const httpUser = process.env.USER ?? 'user';
@@ -28,6 +29,7 @@ const server = http.createServer(app);
 // }));
 app.use(cors()); // Allows Leaflet frontend to talk to this API
 app.use(bodyParser.json());
+app.use(express.urlencoded({ extended: true }));
 app.use('/leaflet', express.static(path.join(__dirname, 'node_modules/leaflet/dist')));
 
 const pool = new Pool({
@@ -68,13 +70,16 @@ server.on('upgrade', (request, socket, head) => {
 
 app.post('/log', async (req, res) => {
     console.log('incoming log event');
-    const deviceId = req.body.device_id;
-    const latitude = req.body.location.coords.latitude;
-    const longitude = req.body.location.coords.longitude;
-    const speed = req.body.location.coords.speed;
-    const accuracy = req.body.location.coords.accuracy;
-    const battery = req.body.location.battery.level;
-    // const timestamp = req.body.location.timestamp;
+    console.log(req.body);
+    const deviceId = req.body?.id ?? 'unknown';
+    const latitude = req.body.lat;
+    const longitude = req.body.lon;
+    // const altitude = req.body.altitude;
+    // const speed = req.body.location.coords.speed; // not part of request body
+    const speed = 0;
+    const accuracy = req.body.accuracy;
+    const battery = req.body.batt;
+    // const timestamp = req.body.timestamp;
 
     await pool.query(
         `INSERT INTO user_locations (user_id, geom, speed, accuracy, battery, device_id, updated_at) 
@@ -89,13 +94,13 @@ app.post('/log', async (req, res) => {
                 user: httpUser,
                 latitude: Number.parseFloat(latitude),
                 longitude: Number.parseFloat(longitude),
-                speed: speed,
                 battery: battery,
                 accuracy: accuracy
             }
         ]
     );
 
+    console.log(clients.size + ' clients connected');
     clients.forEach(client => {
         if (client.readyState === 1) client.send(payload);
     });

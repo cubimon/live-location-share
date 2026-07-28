@@ -18,5 +18,8 @@
     "leaflet": "^1.9.4",
     "pg": "^8.20.0",
     "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
   }
 }

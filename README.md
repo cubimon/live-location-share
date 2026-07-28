@@ -21,8 +21,8 @@ CREATE TABLE user_locations (
 );
 
 ALTER TABLE user_locations
-    ADD COLUMN speed NUMERIC,
-    ADD COLUMN battery NUMERIC,
-    ADD COLUMN accuracy NUMERIC,
-    ADD COLUMN device_id VARCHAR(32);
+    ADD COLUMN IF NOT EXISTS speed NUMERIC,
+    ADD COLUMN IF NOT EXISTS battery NUMERIC,
+    ADD COLUMN IF NOT EXISTS accuracy NUMERIC,
+    ADD COLUMN IF NOT EXISTS device_id VARCHAR(32);
 ```
