@@ -81,19 +81,19 @@ app.post('/log', async (req, res) => {
     const speed = req.body?.speed || 0; // not always part of request body
     const accuracy = req.body.accuracy || 0;
     const battery = req.body.batt || 0;
-    const timestamp = new Date(req.body.timestamp);
+    const timestamp = new Date(parseInt(req.body.timestamp));
 
     await pool.query(`
         INSERT INTO user_locations (
             user_id,
             geom, altitude, speed, accuracy,
             battery, device_id,
-            timestamp, created_at)
+            timestamp)
         VALUES (
             $1,
-            ST_SetSRID(ST_MakePoint($2, $3), $4 4326), $5, $6,
+            ST_SetSRID(ST_MakePoint($2, $3), 4326), $4, $5, $6,
             $7, $8,
-            $9, NOW())`, [
+            $9)`, [
             httpUser,
             longitude, latitude, altitude, speed, accuracy,
             battery, deviceId,
