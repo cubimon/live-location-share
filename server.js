@@ -3,7 +3,6 @@ import http from 'http';
 import { Pool } from 'pg';
 import cors from 'cors';
 import bodyParser from 'body-parser';
-import basicAuth from 'express-basic-auth';
 import { WebSocketServer } from 'ws';
 import path from 'path';
 import { migrate } from './migrations.js';
@@ -11,23 +10,17 @@ import { migrate } from './migrations.js';
 process.loadEnvFile('.env');
 
 const serverPort = process.env.SERVER_PORT ?? 3000;
-const httpUser = process.env.USER ?? 'user';
-const httpUserPassword = process.env.USER_PASSWORD ?? 'secret';
+const deviceIds = (process.env.DEVICE_IDS ?? '').split(',');
 const dbUser = process.env.DB_USER ?? 'postgres';
 const dbPassword = process.env.DB_PASSWORD ?? 'postgres';
 const dbHost = process.env.DB_HOST ?? 'localhost';
 const dbDatabase = process.env.DB_DATABASE ?? 'postgres';
 const dbPort = process.env.DB_PORT ?? 5432;
 
-const users = {};
-users[httpUser] = httpUserPassword;
+console.log('deviceIds: ' + JSON.stringify(deviceIds));
 
 const app = express();
 const server = http.createServer(app);
-app.use('/log', basicAuth({
-    users: users,
-    challenge: true // Triggers the browser login prompt
-}));
 app.use(cors()); // Allows Leaflet frontend to talk to this API
 app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
@@ -73,7 +66,11 @@ server.on('upgrade', (request, socket, head) => {
 
 app.post('/log', async (req, res) => {
     console.log('incoming log event');
-    console.log(req.body);
+    console.log('url: ' + req?.url);
+    console.log('headers: ' + JSON.stringify(req?.headers));
+    console.log('body: ' + JSON.stringify(req?.body));
+    console.log('query: ' + JSON.stringify(req?.query));
+    const user = process.env.USER;
     const deviceId = req.body?.id ?? 'unknown';
     const latitude = req.body.lat;
     const longitude = req.body.lon;
@@ -82,6 +79,10 @@ app.post('/log', async (req, res) => {
     const accuracy = req.body.accuracy || 0;
     const battery = req.body.batt || 0;
     const timestamp = new Date(parseInt(req.body.timestamp));
+    if (deviceIds.indexOf(deviceId) < 0) {
+        console.log('unknown device id');
+        return;
+    }
 
     await pool.query(`
         INSERT INTO user_locations (
@@ -94,7 +95,7 @@ app.post('/log', async (req, res) => {
             ST_SetSRID(ST_MakePoint($2, $3), 4326), $4, $5, $6,
             $7, $8,
             $9)`, [
-            httpUser,
+            user,
             longitude, latitude, altitude, speed, accuracy,
             battery, deviceId,
             timestamp
@@ -104,7 +105,7 @@ app.post('/log', async (req, res) => {
     const payload = JSON.stringify(
         [
             {
-                user: httpUser,
+                user: user,
                 latitude: Number.parseFloat(latitude),
                 longitude: Number.parseFloat(longitude),
                 battery: battery,
@@ -118,7 +119,7 @@ app.post('/log', async (req, res) => {
         if (client.readyState === 1) client.send(payload);
     });
 
-    console.log(`Updated location for ${httpUser}`);
+    console.log(`Updated location for ${user}`);
     res.status(200).send("OK");
 });
 
@@ -146,7 +147,7 @@ async function readHistory() {
         FROM user_locations
         WHERE user_id = $1
         ORDER BY created_at DESC LIMIT 100`,
-        [httpUser]
+        [process.env.USER]
     );
 }
 
