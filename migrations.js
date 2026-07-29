@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS user_locations (
     updated_at TIMESTAMP
 );
 
+ALTER TABLE user_locations DROP CONSTRAINT if exists user_locations_pkey;
 ALTER TABLE user_locations
     ADD COLUMN IF NOT EXISTS speed NUMERIC,
     ADD COLUMN IF NOT EXISTS battery NUMERIC,
@@ -15,7 +16,10 @@ ALTER TABLE user_locations
     ADD COLUMN IF NOT EXISTS device_id VARCHAR(32),
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMP,
     ADD COLUMN IF NOT EXISTS timestamp TIMESTAMPTZ,
-    DROP COLUMN IF EXISTS updated_at;
+    DROP COLUMN IF EXISTS updated_at,
+    ALTER COLUMN created_at SET DEFAULT CURRENT_TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS id BIGINT GENERATED ALWAYS AS IDENTITY,
+    ADD CONSTRAINT user_locations_pkey PRIMARY KEY(id);
 `;
 
 /**
