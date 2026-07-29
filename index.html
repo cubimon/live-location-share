@@ -50,7 +50,7 @@
 
 		// 2. Connect to your Node.js WebSocket
 		// Change 'localhost' to your laptop IP or DynDNS when testing
-		const socket = new WebSocket('ws://' + window.location.hostname + ':' + window.location.port + '/ws');
+		const socket = new WebSocket('wss://' + window.location.hostname + ':' + window.location.port + '/ws');
 
 		socket.onopen = () => {
 			document.getElementById('status').innerText = "Live";
