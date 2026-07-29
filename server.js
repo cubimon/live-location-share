@@ -1,11 +1,12 @@
-const express = require('express');
-const http = require('http');
-const { Pool } = require('pg');
-const cors = require('cors');
-const bodyParser = require('body-parser');
-const basicAuth = require('express-basic-auth');
-const { WebSocketServer } = require('ws');
-const path = require('path');
+import express from 'express';
+import http from 'http';
+import { Pool } from 'pg';
+import cors from 'cors';
+import bodyParser from 'body-parser';
+import basicAuth from 'express-basic-auth';
+import { WebSocketServer } from 'ws';
+import path from 'path';
+import { migrate } from './migrations.js';
 
 process.loadEnvFile('.env');
 
@@ -23,14 +24,14 @@ users[httpUser] = httpUserPassword;
 
 const app = express();
 const server = http.createServer(app);
-// app.use('/log', basicAuth({
-//     users: users,
-//     challenge: true // Triggers the browser login prompt
-// }));
+app.use('/log', basicAuth({
+    users: users,
+    challenge: true // Triggers the browser login prompt
+}));
 app.use(cors()); // Allows Leaflet frontend to talk to this API
 app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
-app.use('/leaflet', express.static(path.join(__dirname, 'node_modules/leaflet/dist')));
+app.use('/leaflet', express.static(path.join(import.meta.dirname, 'node_modules/leaflet/dist')));
 
 const pool = new Pool({
     user: dbUser,
@@ -40,10 +41,12 @@ const pool = new Pool({
     port: dbPort,
 });
 
-pool.on('error', (err, client) => {
+pool.on('error', (err, _client) => {
     console.error('Unexpected error on idle client', err);
     process.exit(-1);
 });
+
+migrate(pool);
 
 const wss = new WebSocketServer({ noServer: true });
 const clients = new Set();
@@ -74,18 +77,28 @@ app.post('/log', async (req, res) => {
     const deviceId = req.body?.id ?? 'unknown';
     const latitude = req.body.lat;
     const longitude = req.body.lon;
-    // const altitude = req.body.altitude;
-    // const speed = req.body.location.coords.speed; // not part of request body
-    const speed = 0;
-    const accuracy = req.body.accuracy;
-    const battery = req.body.batt;
-    // const timestamp = req.body.timestamp;
+    const altitude = req.body.altitude;
+    const speed = req.body?.speed || 0; // not always part of request body
+    const accuracy = req.body.accuracy || 0;
+    const battery = req.body.batt || 0;
+    const timestamp = new Date(req.body.timestamp);
 
-    await pool.query(
-        `INSERT INTO user_locations (user_id, geom, speed, accuracy, battery, device_id, updated_at) 
-         VALUES ($1, ST_SetSRID(ST_MakePoint($2, $3), 4326), $4, $5, $6, $7, NOW())`,
-        [httpUser, longitude, latitude, speed || 0, accuracy || 0, battery || 0, deviceId]
-    );
+    await pool.query(`
+        INSERT INTO user_locations (
+            user_id,
+            geom, altitude, speed, accuracy,
+            battery, device_id,
+            timestamp, created_at)
+        VALUES (
+            $1,
+            ST_SetSRID(ST_MakePoint($2, $3), $4 4326), $5, $6,
+            $7, $8,
+            $9, NOW())`, [
+            httpUser,
+            longitude, latitude, altitude, speed, accuracy,
+            battery, deviceId,
+            timestamp
+        ]);
 
     // Broadcast to all WebSocket clients
     const payload = JSON.stringify(
@@ -109,7 +122,7 @@ app.post('/log', async (req, res) => {
     res.status(200).send("OK");
 });
 
-app.get('/history', async (req, res) => {
+app.get('/history', async (_req, res) => {
     try {
         // This gets the last 100 points for a user
         // Note: You'll need a table with a history of points, 
@@ -132,13 +145,13 @@ async function readHistory() {
             device_id
         FROM user_locations
         WHERE user_id = $1
-        ORDER BY updated_at DESC LIMIT 100`,
+        ORDER BY created_at DESC LIMIT 100`,
         [httpUser]
     );
 }
 
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+app.get('/', (_req, res) => {
+    res.sendFile(path.join(import.meta.dirname, 'index.html'));
 });
 
 server.listen(serverPort, () => console.log('Backend running on port ' + serverPort)).on('error', (err) => {
