@@ -7,7 +7,16 @@ CREATE TABLE IF NOT EXISTS user_locations (
     updated_at TIMESTAMP
 );
 
-ALTER TABLE user_locations DROP CONSTRAINT if exists user_locations_pkey;
+CREATE TABLE IF NOT EXISTS location_groups (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE user_locations
+    DROP CONSTRAINT IF EXISTS user_locations_pkey,
+    DROP CONSTRAINT IF EXISTS fk_user_locations_group;
 ALTER TABLE user_locations
     ADD COLUMN IF NOT EXISTS speed NUMERIC,
     ADD COLUMN IF NOT EXISTS battery NUMERIC,
@@ -19,7 +28,12 @@ ALTER TABLE user_locations
     DROP COLUMN IF EXISTS updated_at,
     ALTER COLUMN created_at SET DEFAULT CURRENT_TIMESTAMP,
     ADD COLUMN IF NOT EXISTS id BIGINT GENERATED ALWAYS AS IDENTITY,
-    ADD CONSTRAINT user_locations_pkey PRIMARY KEY(id);
+    ADD CONSTRAINT user_locations_pkey PRIMARY KEY(id),
+    ADD COLUMN IF NOT EXISTS group_id BIGINT,
+    ADD CONSTRAINT fk_user_locations_group
+        FOREIGN KEY (group_id)
+        REFERENCES location_groups(id)
+        ON DELETE SET NULL;
 `;
 
 /**
