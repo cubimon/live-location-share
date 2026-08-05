@@ -46,7 +46,7 @@ wss.on('connection', async (ws) => {
   clients.add(ws);
   console.log('Viewer connected via WebSocket');
   ws.on('close', () => clients.delete(ws));
-  const result = await readHistory();
+  const result = await getHistory();
   ws.send(JSON.stringify(result.rows));
 });
 
@@ -120,13 +120,13 @@ app.get('/history', async (_req, res) => {
   // This gets the last 100 points for a user
   // Note: You'll need a table with a history of points,
   // not just the 'ON CONFLICT UPDATE' table we made earlier.
-  const result = await readHistory();
+  const result = await getHistory();
   res.json(result.rows);
 });
 
 app.get('/groups', async (_req, res) => {
   try {
-    const result = await readGroups();
+    const result = await getGroups();
     res.json(result.rows);
   } catch (err) {
     console.error(err);
@@ -150,7 +150,18 @@ app.post('/groups', async (req, res) => {
   }
 });
 
-async function readHistory() {
+app.get('/groups/:groupId/points', async (req, res) => {
+  const groupId = req.params.groupId;
+  try {
+    const result = await getGroupPoints(groupId);
+    const groupPoints = result.rows;
+    res.status(200).send(groupPoints);
+  } catch (err) {
+    console.error(err);
+  }
+});
+
+async function getHistory() {
   return await pool.query(
       `SELECT
           ST_X(geom::geometry) as longitude,
@@ -158,20 +169,37 @@ async function readHistory() {
           speed,
           accuracy,
           battery,
-          device_id
+          device_id,
+          created_at
       FROM user_locations
       WHERE user_id = $1
       ORDER BY created_at DESC LIMIT 100`,
       [process.env.USER]);
 }
 
-async function readGroups() {
+async function getGroups() {
   return await pool.query(
       `SELECT
           name,
           description,
           created_at
       FROM location_groups`);
+}
+
+async function getGroupPoints(groupId) {
+  return await pool.query(
+      `SELECT
+          ST_X(geom::geometry) as longitude,
+          ST_Y(geom::geometry) as latitude,
+          speed,
+          accuracy,
+          battery
+          device_id,
+          created_at
+      FROM user_locations
+      WHERE group_id = $1
+      ORDER BY created_at desc`,
+      [groupId]);
 }
 
 async function createGroup(name, description) {
