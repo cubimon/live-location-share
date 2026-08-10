@@ -5,6 +5,7 @@ import bodyParser from 'body-parser';
 import { WebSocketServer } from 'ws';
 import path from 'path';
 
+import { paginate } from './middleware/paginate.js';
 import { migrate } from './migrations.js';
 
 process.loadEnvFile('.env');
@@ -22,6 +23,7 @@ export const app = express();
 app.use(cors()); // Allows Leaflet frontend to talk to this API
 app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(paginate());
 app.use('/leaflet', express.static(path.join(import.meta.dirname, 'node_modules/leaflet/dist')));
 
 export const pool = new Pool({
@@ -46,8 +48,6 @@ wss.on('connection', async (ws) => {
   clients.add(ws);
   console.log('Viewer connected via WebSocket');
   ws.on('close', () => clients.delete(ws));
-  const result = await getHistory();
-  ws.send(JSON.stringify(result.rows));
 });
 
 app.post('/log', async (req, res) => {
@@ -69,7 +69,7 @@ app.post('/log', async (req, res) => {
     timestamp = new Date(parseInt(req.body.timestamp))
   }
   if (deviceIds.indexOf(deviceId) < 0) {
-      console.log('unknown device id: ' + deviceId);
+      console.warn('unknown device id: ' + deviceId);
       return;
   }
 
@@ -116,14 +116,6 @@ app.post('/log', async (req, res) => {
   res.status(200).send('OK');
 });
 
-app.get('/history', async (_req, res) => {
-  // This gets the last 100 points for a user
-  // Note: You'll need a table with a history of points,
-  // not just the 'ON CONFLICT UPDATE' table we made earlier.
-  const result = await getHistory();
-  res.json(result.rows);
-});
-
 app.get('/groups', async (_req, res) => {
   try {
     const result = await getGroups();
@@ -151,9 +143,13 @@ app.post('/groups', async (req, res) => {
 });
 
 app.get('/groups/:groupId/points', async (req, res) => {
-  const groupId = req.params.groupId;
+  let groupId = req.params.groupId;
+  if (groupId == 0) {
+    groupId = null;
+  }
   try {
-    const result = await getGroupPoints(groupId);
+    const result = await getGroupPoints(
+      groupId, req.pagination.limit, req.pagination.skip);
     const groupPoints = result.rows;
     res.status(200).send(groupPoints);
   } catch (err) {
@@ -161,45 +157,14 @@ app.get('/groups/:groupId/points', async (req, res) => {
   }
 });
 
-async function getHistory() {
-  return await pool.query(
-      `SELECT
-          ST_X(geom::geometry) as longitude,
-          ST_Y(geom::geometry) as latitude,
-          speed,
-          accuracy,
-          battery,
-          device_id,
-          created_at
-      FROM user_locations
-      WHERE user_id = $1
-      ORDER BY created_at DESC LIMIT 100`,
-      [process.env.USER]);
-}
-
 async function getGroups() {
   return await pool.query(
       `SELECT
+          id,
           name,
           description,
           created_at
       FROM location_groups`);
-}
-
-async function getGroupPoints(groupId) {
-  return await pool.query(
-      `SELECT
-          ST_X(geom::geometry) as longitude,
-          ST_Y(geom::geometry) as latitude,
-          speed,
-          accuracy,
-          battery
-          device_id,
-          created_at
-      FROM user_locations
-      WHERE group_id = $1
-      ORDER BY created_at desc`,
-      [groupId]);
 }
 
 async function createGroup(name, description) {
@@ -210,8 +175,24 @@ async function createGroup(name, description) {
       [name, description]);
 }
 
+async function getGroupPoints(groupId, limit, skip) {
+  return await pool.query(
+      `SELECT
+          ST_X(geom::geometry) as longitude,
+          ST_Y(geom::geometry) as latitude,
+          speed,
+          accuracy,
+          battery
+          device_id,
+          created_at
+      FROM user_locations
+      WHERE group_id IS NOT DISTINCT FROM $1
+      ORDER BY created_at desc
+      LIMIT $2 OFFSET $3`,
+      [groupId, limit, skip]);
+}
+
 async function addUnassignedUserLocationsToGroup(groupId) {
-  console.log(groupId);
   await pool.query(
       `UPDATE user_locations
       set group_id = $1
