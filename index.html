@@ -15,7 +15,7 @@
       padding: 0;
     }
 
-    .stats-box {
+    .info-control {
       position: absolute;
       top: 10px;
       right: 10px;
@@ -30,13 +30,6 @@
 </head>
 
 <body>
-  Groups: <select id="groupsSelect" onchange="selectionChanged(event)" disabled></select>
-  <button onclick="newGroup()">new group</button>
-  <div class="stats-box">
-    <b>Status:</b> <span id="status">Connecting...</span><br>
-    <b>Speed:</b> <span id="speed">0</span> km/h<br>
-    <b>Battery:</b> <span id="batt">0</span>%
-  </div>
   <div id="map"></div>
 
   <script src="/leaflet/leaflet.js"></script>
@@ -104,8 +97,34 @@
       });
     }
 
+    function createInfoControl(map) {
+      const infoControl = L.Control.extend({
+        options: {
+          position: 'topright' // 'topleft', 'topright', 'bottomleft', 'bottomright'
+        },
+        onAdd: function(map) {
+          const container = L.DomUtil.create('div', 'info-control');
+          container.innerHTML = `
+            <div class="info-control">
+              Groups: <select id="groupsSelect" onchange="selectionChanged(event)" disabled></select>
+              <button onclick="newGroup()">new group</button><br>
+              <b>Status:</b> <span id="status">Connecting...</span><br>
+              <b>Speed:</b> <span id="speed">0</span> km/h<br>
+              <b>Battery:</b> <span id="batt">0</span>%
+            </div>
+          `;
+          // Prevent map dragging/zooming when interacting with the UI
+          L.DomEvent.disableClickPropagation(container);
+          L.DomEvent.disableScrollPropagation(container);
+          return container;
+        }
+      });
+      return new infoControl();
+    }
+
     // 1. Setup Map
     const map = L.map('map').setView([0, 0], 2);
+    map.addControl(createInfoControl());
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors'
     }).addTo(map);
