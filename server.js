@@ -1,6 +1,6 @@
 import http from 'http';
 
-import { app } from './app.js';
+import { app, wss } from './app.js';
 
 const serverPort = process.env.SERVER_PORT ?? 3000;
 const server = http.createServer(app);

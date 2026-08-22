@@ -41,7 +41,7 @@ pool.on('error', (err, _client) => {
 
 migrate(pool);
 
-const wss = new WebSocketServer({ noServer: true });
+export const wss = new WebSocketServer({ noServer: true });
 const clients = new Set();
 
 wss.on('connection', async (ws) => {
