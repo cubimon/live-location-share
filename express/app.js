@@ -182,7 +182,7 @@ async function getGroupPoints(groupId, limit, skip) {
           ST_Y(geom::geometry) as latitude,
           speed,
           accuracy,
-          battery
+          battery,
           device_id,
           created_at
       FROM user_locations
