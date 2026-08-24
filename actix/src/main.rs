@@ -27,6 +27,53 @@ struct AppState {
     pool_data: actix_web::web::Data<sqlx::PgPool>,
 }
 
+#[derive(Deserialize)]
+struct LogData {
+    id: String,
+    lat: Decimal,
+    lon: Decimal,
+    altitude: Decimal,
+    speed: Decimal,
+    accuracy: Decimal,
+    batt: Decimal,
+    #[serde(with = "chrono::serde::ts_seconds")]
+    timestamp: DateTime<Utc>,
+}
+
+#[post("/log")]
+async fn log(form: web::Form<LogData>, data: web::Data<AppState>) -> impl Responder {
+    // validate device id
+    let insert_query = r#"
+        INSERT INTO user_locations (
+            user_id,
+            geom, altitude, speed, accuracy,
+            battery, device_id,
+            timestamp)
+        VALUES (
+            $1,
+            ST_SetSRID(ST_MakePoint($2, $3), 4326), $4, $5, $6,
+            $7, $8,
+            $9)
+    "#;
+    match sqlx::query(insert_query)
+        .bind("cubimon")
+        .bind(&form.lon)
+        .bind(&form.lat)
+        .bind(&form.altitude)
+        .bind(&form.speed)
+        .bind(&form.accuracy)
+        .bind(&form.batt)
+        .bind(&form.id)
+        .bind(&form.timestamp)
+        .execute(data.pool_data.get_ref())
+        .await
+    {
+        Ok(_) => {},
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+    HttpResponse::Ok().json("")
+}
+
 #[derive(Serialize, FromRow)]
 struct LocationGroup {
     id: i64,
@@ -98,8 +145,8 @@ async fn create_group(
 
 #[derive(Deserialize)]
 pub struct GroupQuery {
-    pub page: Option<i64>,
-    pub limit: Option<i64>,
+    page: Option<i64>,
+    limit: Option<i64>,
 }
 
 #[derive(Serialize, FromRow)]
@@ -186,3 +233,4 @@ async fn main() -> std::io::Result<()> {
     .run()
     .await
 }
+
