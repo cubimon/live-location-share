@@ -1,0 +1,35 @@
+CREATE EXTENSION IF NOT EXISTS postgis;
+
+CREATE TABLE IF NOT EXISTS user_locations (
+    user_id VARCHAR(50),
+    geom GEOGRAPHY(Point, 4326),
+    updated_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS location_groups (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE user_locations
+    DROP CONSTRAINT IF EXISTS user_locations_pkey,
+    DROP CONSTRAINT IF EXISTS fk_user_locations_group;
+ALTER TABLE user_locations
+    ADD COLUMN IF NOT EXISTS speed NUMERIC,
+    ADD COLUMN IF NOT EXISTS battery NUMERIC,
+    ADD COLUMN IF NOT EXISTS accuracy NUMERIC,
+    ADD COLUMN IF NOT EXISTS altitude NUMERIC,
+    ADD COLUMN IF NOT EXISTS device_id VARCHAR(32),
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS timestamp TIMESTAMPTZ,
+    DROP COLUMN IF EXISTS updated_at,
+    ALTER COLUMN created_at SET DEFAULT CURRENT_TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS id BIGINT GENERATED ALWAYS AS IDENTITY,
+    ADD CONSTRAINT user_locations_pkey PRIMARY KEY(id),
+    ADD COLUMN IF NOT EXISTS group_id BIGINT,
+    ADD CONSTRAINT fk_user_locations_group
+        FOREIGN KEY (group_id)
+        REFERENCES location_groups(id)
+        ON DELETE SET NULL;

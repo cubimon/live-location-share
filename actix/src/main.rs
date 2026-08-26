@@ -216,6 +216,11 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("Failed to connect to Postgres");
     println!("Successfully connected to PostgreSQL!");
+    match sqlx::migrate!("./migrations")
+        .run(&pool).await {
+        Ok(_) => {},
+        Err(e) => eprintln!("Failed to run migrations, {}", e),
+    }
     let pool_data = web::Data::new(pool);
     let app_state = web::Data::new(AppState {
         pool_data: pool_data.clone()
