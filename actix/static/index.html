@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Live GPS Tracker</title>
+  <link rel="stylesheet" href="/leaflet/leaflet.css" />
+  <style>
+    #map {
+      height: 100vh;
+      width: 100%;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+    }
+
+    .info-control {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1000;
+      background: white;
+      padding: 10px;
+      border-radius: 5px;
+      font-family: sans-serif;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+    }
+  </style>
+</head>
+
+<body>
+  <div id="map"></div>
+
+  <script src="/leaflet/leaflet.js"></script>
+  <script>
+    const PAGE_SIZE = 1000;
+    function selectionChanged(changeEvent) {
+      clearAll();
+      loadGroup(changeEvent.target.value);
+    }
+
+    function loadGroup(groupId, page) {
+      if (!page) {
+        page = 0;
+      }
+      fetch(`./groups/${groupId}/points?page=${page}&limit=${PAGE_SIZE}`)
+        .then(res => res.json())
+        .then(res => {
+          renderPoints(res);
+          if (res.length == PAGE_SIZE) {
+            loadGroup(groupId, page + 1);
+          }
+        });
+    }
+
+    function clearAll() {
+      drawnItems.clearLayers(); // Instantly removes all markers and polylines
+      markers = {};
+      routes = {};
+    }
+
+    function renderPoints(points) {
+      for (const row of points) {
+        const { user, latitude, longitude, speed, battery } = row;
+
+        if (!latitude || !longitude) {
+          continue;
+        }
+
+        // Update Stats UI
+        document.getElementById('speed').innerText = Math.round(speed || 0);
+        document.getElementById('batt').innerText = battery || 0;
+
+        const pos = [latitude, longitude];
+
+        // 3. Update or Create Marker
+        if (!markers[user]) {
+          markers[user] = L.marker(pos).addTo(drawnItems).bindPopup(`User: ${user}`);
+          routes[user] = L.polyline([pos], { color: 'red' }).addTo(drawnItems);
+          map.setView(pos, 15); // Zoom to first point
+        } else {
+          markers[user].setLatLng(pos);
+          routes[user].addLatLng(pos);
+        }
+      }
+    }
+
+    async function newGroup() {
+      const groupName = prompt('Enter group name');
+      await fetch('./groups', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({name: groupName}),
+      });
+    }
+
+    function createInfoControl(map) {
+      const infoControl = L.Control.extend({
+        options: {
+          position: 'topright' // 'topleft', 'topright', 'bottomleft', 'bottomright'
+        },
+        onAdd: function(map) {
+          const container = L.DomUtil.create('div', 'info-control');
+          container.innerHTML = `
+            <div class="info-control">
+              Groups: <select id="groupsSelect" onchange="selectionChanged(event)" disabled></select>
+              <button onclick="newGroup()">new group</button><br>
+              <b>Status:</b> <span id="status">Connecting...</span><br>
+              <b>Speed:</b> <span id="speed">0</span> km/h<br>
+              <b>Battery:</b> <span id="batt">0</span>%
+            </div>
+          `;
+          // Prevent map dragging/zooming when interacting with the UI
+          L.DomEvent.disableClickPropagation(container);
+          L.DomEvent.disableScrollPropagation(container);
+          return container;
+        }
+      });
+      return new infoControl();
+    }
+
+    // 1. Setup Map
+    const map = L.map('map').setView([0, 0], 2);
+    map.addControl(createInfoControl());
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+    const drawnItems = L.layerGroup().addTo(map);
+
+    let markers = {};
+    let routes = {};
+    fetch('./groups')
+      .then(res => res.json())
+      .then(res => {
+        const select = document.getElementById('groupsSelect');
+        let option = document.createElement('option');
+        option.value = 0;
+        option.innerText = 'ungrouped';
+        select.appendChild(option);
+        for (const group of res) {
+          option = document.createElement('option');
+          option.value = group.id;
+          option.innerText = group.name;
+          select.appendChild(option);
+        }
+        if (res.length > 0) {
+          loadGroup(0);
+        }
+        select.disabled = false;
+      });
+
+    // 2. Connect to your Node.js WebSocket
+    // Change 'localhost' to your laptop IP or DynDNS when testing
+    const socket = new WebSocket('wss://' + window.location.hostname + ':' + window.location.port + '/ws');
+
+    socket.onopen = () => {
+      document.getElementById('status').innerText = "Live";
+      document.getElementById('status').style.color = "green";
+    };
+
+    socket.onmessage = (event) => {
+      renderPoints(JSON.parse(event.data));
+    };
+
+    socket.onclose = () => {
+      document.getElementById('status').innerText = "Disconnected";
+      document.getElementById('status').style.color = "red";
+    };
+  </script>
+</body>
+
+</html>

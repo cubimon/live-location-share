@@ -230,6 +230,10 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(app_state.clone()) // Share state across threads
+             .service(
+                actix_files::Files::new("/leaflet", "./node_modules/leaflet/dist")
+                    .index_file("./static/index.html")
+            )
             .service(groups)
             .service(create_group)
             .service(get_group_points)
