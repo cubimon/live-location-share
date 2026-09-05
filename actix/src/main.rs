@@ -1,13 +1,15 @@
-use actix_web::{App, middleware, HttpResponse, HttpServer, Responder, get, post, web};
+use actix_web::{App, middleware, HttpRequest, Error, HttpResponse, HttpServer, Responder, get, post, web};
+use actix_ws::Message;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use dotenvy::dotenv;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::PgPoolOptions;
+use tokio::sync::broadcast;
 use sqlx::{FromRow, Row};
 use std::env;
-use log::{warn, debug};
+use log::{warn, info, debug};
 
 fn get_database_url() -> String {
     let host = env::var("DB_HOST").unwrap_or_else(|_| "localhost".to_string());
@@ -27,6 +29,33 @@ fn get_database_url() -> String {
 
 struct AppState {
     pool_data: actix_web::web::Data<sqlx::PgPool>,
+    tx: broadcast::Sender<String>,
+}
+
+#[get("/ws")]
+async fn websocket_handler(
+    req: HttpRequest,
+    stream: web::Payload,
+    state: web::Data<AppState>,
+) -> Result<impl Responder, Error> {
+    let (response, mut session, mut msg_stream) = actix_ws::handle(&req, stream)?;
+    let mut rx = state.tx.subscribe();
+    let tx = state.tx.clone();
+    actix_web::rt::spawn(async move {
+        while let Ok(msg) = rx.recv().await {
+            if session.text(msg).await.is_err() {
+                break;
+            }
+        }
+    });
+    actix_web::rt::spawn(async move {
+        while let Some(Ok(msg)) = msg_stream.recv().await {
+            if let Message::Text(text) = msg {
+                let _ = tx.send(text.to_string());
+            }
+        }
+    });
+    Ok(response)
 }
 
 #[derive(Deserialize)]
@@ -42,8 +71,20 @@ struct LogData {
     timestamp: DateTime<Utc>,
 }
 
+#[derive(Serialize)]
+struct LogDataResponse {
+    user: String,
+    latitude: Decimal,
+    longitude: Decimal,
+    battery: Decimal,
+    accuracy: Decimal,
+}
+
 #[post("/log")]
-async fn log_location(form: web::Form<LogData>, data: web::Data<AppState>) -> impl Responder {
+async fn log_location(
+    form: web::Form<LogData>,
+    data: web::Data<AppState>)
+-> impl Responder {
     debug!("logging location");
     // validate device id
     let insert_query = r#"
@@ -74,6 +115,15 @@ async fn log_location(form: web::Form<LogData>, data: web::Data<AppState>) -> im
         Ok(_) => {},
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
+    let log_data_response = LogDataResponse {
+        user: String::from("cubimon"),
+        latitude: form.lat,
+        longitude: form.lon,
+        battery: form.batt.unwrap_or(dec!(0)),
+        accuracy: form.accuracy.unwrap_or(dec!(0))
+    };
+    let log_data_response_list = vec![log_data_response];
+    let _ = data.tx.send(serde_json::to_string(&log_data_response_list).unwrap());
     HttpResponse::Ok().json("")
 }
 
@@ -232,15 +282,18 @@ async fn main() -> std::io::Result<()> {
         Err(e) => eprintln!("Failed to run migrations, {}", e),
     }
     let pool_data = web::Data::new(pool);
+    let (tx, _) = broadcast::channel::<String>(100);
     let app_state = web::Data::new(AppState {
-        pool_data: pool_data.clone()
+        pool_data: pool_data.clone(),
+        tx: tx
     });
 
     println!("Server running on http://127.0.0.1:8080");
     HttpServer::new(move || {
         App::new()
             .wrap(middleware::Logger::default())
-            .app_data(app_state.clone()) // Share state across threads
+            .app_data(app_state.clone())
+            .service(websocket_handler)
             .service(groups)
             .service(create_group)
             .service(get_group_points)
