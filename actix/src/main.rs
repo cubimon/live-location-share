@@ -1,11 +1,13 @@
-use actix_web::{App, HttpResponse, HttpServer, Responder, get, post, web};
+use actix_web::{App, middleware, HttpResponse, HttpServer, Responder, get, post, web};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use dotenvy::dotenv;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{FromRow, Row};
 use std::env;
+use log::{warn, debug};
 
 fn get_database_url() -> String {
     let host = env::var("DB_HOST").unwrap_or_else(|_| "localhost".to_string());
@@ -33,15 +35,16 @@ struct LogData {
     lat: Decimal,
     lon: Decimal,
     altitude: Decimal,
-    speed: Decimal,
-    accuracy: Decimal,
-    batt: Decimal,
+    speed: Option<Decimal>,
+    accuracy: Option<Decimal>,
+    batt: Option<Decimal>,
     #[serde(with = "chrono::serde::ts_seconds")]
     timestamp: DateTime<Utc>,
 }
 
 #[post("/log")]
-async fn log(form: web::Form<LogData>, data: web::Data<AppState>) -> impl Responder {
+async fn log_location(form: web::Form<LogData>, data: web::Data<AppState>) -> impl Responder {
+    debug!("logging location");
     // validate device id
     let insert_query = r#"
         INSERT INTO user_locations (
@@ -60,9 +63,9 @@ async fn log(form: web::Form<LogData>, data: web::Data<AppState>) -> impl Respon
         .bind(&form.lon)
         .bind(&form.lat)
         .bind(&form.altitude)
-        .bind(&form.speed)
-        .bind(&form.accuracy)
-        .bind(&form.batt)
+        .bind(&form.speed.unwrap_or(dec!(0)))
+        .bind(&form.accuracy.unwrap_or(dec!(0)))
+        .bind(&form.batt.unwrap_or(dec!(0)))
         .bind(&form.id)
         .bind(&form.timestamp)
         .execute(data.pool_data.get_ref())
@@ -116,6 +119,7 @@ async fn create_group(
     body: web::Json<CreateGroupRequest>,
     data: web::Data<AppState>,
 ) -> impl Responder {
+    debug!("getting groups");
     let insert_query = r#"
         INSERT INTO location_groups(name, description)
         VALUES ($1, $2)
@@ -166,13 +170,14 @@ async fn get_group_points(
     query: web::Query<GroupQuery>,
     data: web::Data<AppState>,
 ) -> impl Responder {
-    let page = query.page.unwrap_or(1);
+    let page = query.page.unwrap_or(0);
     let limit = query.limit.unwrap_or(10);
-    let offset = (page - 1) * limit;
+    let offset = page * limit;
     let mut group_id: Option<i32> = group_id.map(|p| p.into_inner());
     if group_id == Some(0) {
         group_id = None;
     }
+    debug!("getting points for group {:?}", group_id);
     let query = r#"
         SELECT
             ST_X(geom::geometry) as longitude,
@@ -194,8 +199,12 @@ async fn get_group_points(
         .await
     {
         Ok(rows) => rows,
-        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+        Err(e) => {
+            warn!("failed to read group points from db {}", e);
+            return HttpResponse::InternalServerError().body(e.to_string())
+        }
     };
+    debug!("got {} points from db", rows.len());
     let results: Vec<serde_json::Value> = rows
         .into_iter()
         .map(|loc| serde_json::to_value(loc).unwrap())
@@ -205,6 +214,7 @@ async fn get_group_points(
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
     match dotenv() {
         Ok(path) => println!("Successfully loaded .env file from: {:?}", path),
         Err(e) => eprintln!("Failed to load .env file: {}", e),
@@ -229,14 +239,17 @@ async fn main() -> std::io::Result<()> {
     println!("Server running on http://127.0.0.1:8080");
     HttpServer::new(move || {
         App::new()
+            .wrap(middleware::Logger::default())
             .app_data(app_state.clone()) // Share state across threads
-             .service(
-                actix_files::Files::new("/leaflet", "./node_modules/leaflet/dist")
-                    .index_file("./static/index.html")
-            )
             .service(groups)
             .service(create_group)
             .service(get_group_points)
+            .service(log_location)
+            .service(
+                actix_files::Files::new("/leaflet", "./node_modules/leaflet/dist"))
+            .service(
+                actix_files::Files::new("/", "./static")
+                    .index_file("index.html"))
     })
     .bind(("127.0.0.1", 8080))?
     .run()
