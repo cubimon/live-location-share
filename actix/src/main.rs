@@ -1,6 +1,7 @@
-use actix_web::{App, middleware, HttpRequest, Error, HttpResponse, HttpServer, Responder, get, post, web};
+use actix_web::{App, middleware, HttpRequest, Error, HttpResponse, HttpServer, Responder, get, post, web, FromRequest, error::ErrorUnauthorized, dev::Payload};
 use actix_ws::Message;
 use chrono::{DateTime, NaiveDateTime, Utc};
+use std::future::{ready, Ready};
 use dotenvy::dotenv;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -10,6 +11,27 @@ use tokio::sync::broadcast;
 use sqlx::{FromRow, Row};
 use std::env;
 use log::{warn, info, debug};
+
+#[derive(Debug, Clone)]
+pub struct DeviceId(pub String);
+
+impl FromRequest for DeviceId {
+    type Error = Error;
+    type Future = Ready<Result<Self, Self::Error>>;
+    fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
+        let device_id_header = req
+            .headers()
+            .get("X-Device-Id")
+            .and_then(|val| val.to_str().ok());
+
+        match device_id_header {
+            Some(id) if !id.is_empty() => {
+                ready(Ok(DeviceId(id.to_string())))
+            }
+            _ => ready(Err(ErrorUnauthorized("Missing or invalid X-Device-Id header"))),
+        }
+    }
+}
 
 fn get_database_url() -> String {
     let host = env::var("DB_HOST").unwrap_or_else(|_| "localhost".to_string());
@@ -83,8 +105,8 @@ struct LogDataResponse {
 #[post("/log")]
 async fn log_location(
     form: web::Form<LogData>,
-    data: web::Data<AppState>)
--> impl Responder {
+    data: web::Data<AppState>,
+) -> impl Responder {
     debug!("logging location");
     // validate device id
     let insert_query = r#"
@@ -136,7 +158,10 @@ struct LocationGroup {
 }
 
 #[get("/groups")]
-async fn groups(data: web::Data<AppState>) -> impl Responder {
+async fn groups(
+    device_id: DeviceId,
+    data: web::Data<AppState>
+) -> impl Responder {
     let query = r#"
         SELECT
             id,
@@ -166,6 +191,7 @@ struct CreateGroupRequest {
 
 #[post("/groups")]
 async fn create_group(
+    device_id: DeviceId,
     body: web::Json<CreateGroupRequest>,
     data: web::Data<AppState>,
 ) -> impl Responder {
@@ -216,6 +242,7 @@ struct UserLocation {
 
 #[get("/groups/{group_id}/points")]
 async fn get_group_points(
+    device_id: DeviceId,
     group_id: Option<web::Path<i32>>,
     query: web::Query<GroupQuery>,
     data: web::Data<AppState>,
