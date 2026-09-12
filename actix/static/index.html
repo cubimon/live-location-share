@@ -44,7 +44,9 @@
       if (!page) {
         page = 0;
       }
-      fetch(`./groups/${groupId}/points?page=${page}&limit=${PAGE_SIZE}`)
+      fetch(
+        `./groups/${groupId}/points?page=${page}&limit=${PAGE_SIZE}`,
+        { headers: authHeaders })
         .then(res => res.json())
         .then(res => {
           renderPoints(res);
@@ -91,6 +93,7 @@
       await fetch('./groups', {
         method: 'POST',
         headers: {
+          ...authHeaders,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({name: groupName}),
@@ -122,6 +125,16 @@
       return new infoControl();
     }
 
+    function getOrRequestDeviceId() {
+      let deviceId = window.localStorage.getItem('deviceId');
+      if (deviceId) {
+        return deviceId;
+      }
+      deviceId = prompt('Enter device id');
+      window.localStorage.setItem('deviceId', deviceId);
+      return deviceId;
+    }
+
     // 1. Setup Map
     const map = L.map('map').setView([0, 0], 2);
     map.addControl(createInfoControl());
@@ -132,7 +145,12 @@
 
     let markers = {};
     let routes = {};
-    fetch('./groups')
+    let deviceId = getOrRequestDeviceId();
+    let authHeaders = {
+      'X-Device-Id': deviceId
+    }
+
+    fetch('./groups', { headers: authHeaders })
       .then(res => res.json())
       .then(res => {
         const select = document.getElementById('groupsSelect');

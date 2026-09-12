@@ -10,7 +10,7 @@ use sqlx::postgres::PgPoolOptions;
 use tokio::sync::broadcast;
 use sqlx::{FromRow, Row};
 use std::env;
-use log::{warn, info, debug};
+use log::{warn, debug};
 
 #[derive(Debug, Clone)]
 pub struct DeviceId(pub String);
@@ -102,6 +102,7 @@ struct LogDataResponse {
     accuracy: Decimal,
 }
 
+// TODO: make sure device id is tied to some user
 #[post("/log")]
 async fn log_location(
     form: web::Form<LogData>,
@@ -168,8 +169,10 @@ async fn groups(
             name,
             description,
             created_at
-        FROM location_groups"#;
+        FROM location_groups
+        WHERE device_id = $1"#;
     let rows: Vec<LocationGroup> = match sqlx::query_as::<_, LocationGroup>(query)
+        .bind(device_id.0)
         .fetch_all(data.pool_data.get_ref())
         .await
     {
@@ -197,10 +200,11 @@ async fn create_group(
 ) -> impl Responder {
     debug!("getting groups");
     let insert_query = r#"
-        INSERT INTO location_groups(name, description)
-        VALUES ($1, $2)
+        INSERT INTO location_groups(device_id, name, description)
+        VALUES ($1, $2, $3)
         RETURNING id"#;
     let group_id: i64 = match sqlx::query(insert_query)
+        .bind(device_id.0)
         .bind(&body.name)
         .bind(&body.description)
         .fetch_one(data.pool_data.get_ref())
@@ -265,10 +269,12 @@ async fn get_group_points(
             device_id,
             created_at
         FROM user_locations
-        WHERE group_id IS NOT DISTINCT FROM $1
+        WHERE device_id = $1
+            AND group_id IS NOT DISTINCT FROM $2
         ORDER BY created_at desc
-        LIMIT $2 OFFSET $3"#;
+        LIMIT $3 OFFSET $4"#;
     let rows: Vec<UserLocation> = match sqlx::query_as::<_, UserLocation>(query)
+        .bind(device_id.0)
         .bind(group_id)
         .bind(limit)
         .bind(offset)
