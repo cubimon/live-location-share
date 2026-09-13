@@ -332,7 +332,7 @@ async fn main() -> std::io::Result<()> {
             .service(get_group_points)
             .service(log_location)
             .service(
-                actix_files::Files::new("/leaflet", "./node_modules/leaflet/dist"))
+                actix_files::Files::new("/leaflet", "./static/leaflet"))
             .service(
                 actix_files::Files::new("/", "./static")
                     .index_file("index.html"))

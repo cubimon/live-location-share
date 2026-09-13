@@ -1,7 +1,16 @@
 # Live location share
 
 ```bash
+# run locally
 cargo run
+# build release
+paru -S musl
+rustup target add x86_64-unknown-linux-musl
+cargo build --release --target x86_64-unknown-linux-musl
+docker build . -t live-location-share
+# or
+make build
+make run
 ```
 
 ```bash

@@ -7,6 +7,7 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
+    "postinstall": "cp -r ./node_modules/leaflet/dist static/leaflet",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
