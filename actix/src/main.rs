@@ -9,8 +9,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::postgres::PgPoolOptions;
 use tokio::sync::broadcast;
 use sqlx::{FromRow, Row};
-use std::env;
-use log::{warn, debug};
+use std::env; use log::{warn, debug};
 
 #[derive(Debug, Clone)]
 pub struct DeviceId(pub String);
@@ -321,7 +320,9 @@ async fn main() -> std::io::Result<()> {
         tx: tx
     });
 
-    println!("Server running on http://127.0.0.1:8080");
+    let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+    let port: u16 = env::var("PORT").unwrap_or_else(|_| "8080".to_string()).parse().expect("PORT must be integer");
+    println!("Server running on http://{}:{}", host, port);
     HttpServer::new(move || {
         App::new()
             .wrap(middleware::Logger::default())
@@ -337,7 +338,7 @@ async fn main() -> std::io::Result<()> {
                 actix_files::Files::new("/", "./static")
                     .index_file("index.html"))
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind((host.as_str(), port))?
     .run()
     .await
 }
